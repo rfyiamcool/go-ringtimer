@@ -8,7 +8,10 @@ import (
 )
 
 func TestTimeWheelBase(t *testing.T) {
-	tw := NewTimeWheel(time.Second, 60)
+	tw, err := NewTimeWheel(time.Second, 60)
+	if err != nil {
+		t.Error(err)
+	}
 	tw.Start()
 
 	var b = false
@@ -16,6 +19,38 @@ func TestTimeWheelBase(t *testing.T) {
 		b = true
 	})
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 	assert.True(t, b)
+}
+
+func TestTimeWheelRemove(t *testing.T) {
+	tw, err := NewTimeWheel(time.Second, 60)
+	if err != nil {
+		t.Error(err)
+	}
+	tw.Start()
+
+	var b = false
+	ev, _ := tw.AfterFunc(1*time.Second, func() {
+		b = true
+	})
+
+	tw.RemoveTimer(ev)
+	time.Sleep(2 * time.Second)
+	assert.False(t, b)
+}
+
+func TestTimeWheelAfter(t *testing.T) {
+	tw, err := NewTimeWheel(time.Second, 60)
+	if err != nil {
+		t.Error(err)
+	}
+	tw.Start()
+
+	// var b = false
+	select {
+	case <-tw.After(1 * time.Second):
+	case <-time.After(2 * time.Second):
+		t.Error("after func timeout")
+	}
 }

@@ -10,10 +10,12 @@ import (
 const (
 	posWriteMode = iota
 	posReadMode
+
+	SecondInterval = time.Second
 )
 
 var (
-	ErrLtMinDelay = errors.New("delay min")
+	ErrLtMinDelay = errors.New("lt delay min")
 )
 
 type TimeWheel struct {
@@ -32,9 +34,9 @@ type TimeWheel struct {
 	updateEventChannel chan *Event
 }
 
-func NewTimeWheel(interval time.Duration, slotNum int) *TimeWheel {
-	if interval <= 0 || slotNum <= 0 {
-		return nil
+func NewTimeWheel(interval time.Duration, slotNum int) (*TimeWheel, error) {
+	if interval < SecondInterval || slotNum <= 0 {
+		return nil, ErrLtMinDelay
 	}
 
 	var ctx, cancel = context.WithCancel(context.Background())
@@ -49,7 +51,7 @@ func NewTimeWheel(interval time.Duration, slotNum int) *TimeWheel {
 	}
 
 	tw.initSlots()
-	return tw
+	return tw, nil
 }
 
 func (tw *TimeWheel) initSlots() {
@@ -64,7 +66,7 @@ func (tw *TimeWheel) Start() {
 	}
 
 	tw.currentPos = tw.getInitPosition()
-	tw.ticker = time.NewTicker(tw.interval)
+	tw.ticker = time.NewTicker(tw.interval / 2)
 	tw.started = true
 	go tw.start()
 }
@@ -91,7 +93,7 @@ func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*Event, error
 	}
 
 	var (
-		pos   = tw.getPosition(delay)
+		pos   = tw.getWritePosition(delay)
 		timer = tw.slots[pos]
 	)
 
@@ -110,12 +112,20 @@ func (tw *TimeWheel) RemoveTimer(ev *Event) {
 }
 
 func (tw *TimeWheel) Sleep(delay time.Duration) {
-	timer := tw.getTimerInSlot(delay)
+	var (
+		pos   = tw.getWritePosition(delay)
+		timer = tw.slots[pos]
+	)
+
 	timer.Sleep(delay)
 }
 
 func (tw *TimeWheel) After(delay time.Duration) <-chan time.Time {
-	timer := tw.getTimerInSlot(delay)
+	var (
+		pos   = tw.getWritePosition(delay)
+		timer = tw.slots[pos]
+	)
+
 	return timer.After(delay)
 }
 
@@ -128,10 +138,11 @@ func (tw *TimeWheel) GetTimerCount() int64 {
 }
 
 func (tw *TimeWheel) start() {
+	tw.tickHandler()
 	for {
 		select {
 		case <-tw.ticker.C:
-			tw.tickHandler()
+			go tw.tickHandler()
 
 		case <-tw.updateEventChannel:
 
@@ -142,18 +153,38 @@ func (tw *TimeWheel) start() {
 }
 
 func (tw *TimeWheel) tickHandler() {
-	timer := tw.slots[tw.currentPos]
+	pos := tw.getInitPosition()
+	tw.currentPos = pos
+	timer := tw.slots[pos]
 	timer.LoopOnce()
+
 	// wheel full, reset init 0
-	if tw.currentPos == tw.slotNum-1 {
-		tw.currentPos = 0
-	} else {
-		tw.currentPos++
-	}
+	// if tw.currentPos == tw.slotNum-1 {
+	// 	tw.currentPos = 0
+	// } else {
+	// 	tw.currentPos++
+	// }
 }
 
-func (tw *TimeWheel) GetTimers(d time.Duration) []*Timer {
+func (tw *TimeWheel) GetTimers() []*Timer {
 	return tw.slots
+}
+
+type TimerStatsRes struct {
+	SlotID int
+	Len    int
+}
+
+func (tw *TimeWheel) GetTimersLength() []TimerStatsRes {
+	var res = make([]TimerStatsRes, tw.slotNum)
+	for idx, tm := range tw.slots {
+		res[idx] = TimerStatsRes{
+			SlotID: idx,
+			Len:    tm.Len(),
+		}
+	}
+
+	return res
 }
 
 func (tw *TimeWheel) getPosition(d time.Duration) (pos int) {
@@ -181,6 +212,7 @@ func (tw *TimeWheel) callGetPosition(delay time.Duration, mode int) int {
 	}
 
 	pos = plus % tw.slotNum
+
 	if mode == posWriteMode && pos == tw.currentPos {
 		pos++
 	}
@@ -189,7 +221,13 @@ func (tw *TimeWheel) callGetPosition(delay time.Duration, mode int) int {
 }
 
 func (tw *TimeWheel) getInitPosition() int {
-	var pos = int(time.Now().Unix()) % tw.slotNum
+	var pos int
+	if tw.interval >= time.Millisecond && tw.interval < time.Second {
+		pos = int(time.Now().Nanosecond()/1000/1000) % tw.slotNum
+	} else {
+		pos = int(time.Now().Unix()) % tw.slotNum
+	}
+
 	return pos
 }
 

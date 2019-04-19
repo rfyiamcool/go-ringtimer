@@ -26,6 +26,15 @@ type Event struct {
 	alone   bool // indicates event is alone or in the free linked-list of timer
 }
 
+// clear field
+func (e *Event) clear() {
+	e.index = 0
+	e.slotPos = 0
+	e.cron = false
+	e.fn = nil
+	e.alone = false
+}
+
 // Less is used to compare expiration with other events.
 func (e *Event) Less(o *Event) bool {
 	return e.expire.Before(o.expire)

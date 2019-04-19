@@ -10,6 +10,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func BenchmarkAddTimer(t *testing.B) {
+	var timer = NewTimer()
+	for index := 1; index < t.N; index++ {
+		timer.Add(time.Millisecond*time.Duration(index), func() {
+		})
+	}
+}
+func BenchmarkAddDelTimer(t *testing.B) {
+	var timer = NewTimer()
+	for index := 1; index < t.N; index++ {
+		ev := timer.Add(time.Millisecond*time.Duration(index), func() {
+		})
+		timer.Del(ev)
+	}
+}
+
 func TestTimerLoop(t *testing.T) {
 	timer := NewTimer()
 	var wg sync.WaitGroup

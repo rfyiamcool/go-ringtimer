@@ -3,6 +3,7 @@ package timewheel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,8 +73,6 @@ func (t *Timer) init(cap int) {
 
 // Len return the length of min heap array.
 func (t *Timer) Len() int {
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	return len(t.events)
 }
 
@@ -198,8 +197,7 @@ func (t *Timer) Del(event *Event) {
 }
 
 func (t *Timer) put(event *Event) {
-	event.fn = nil
-	event.alone = false
+	event.clear()
 	if onSyncPool {
 		globalEventPool.put(event)
 	}
@@ -302,7 +300,7 @@ func (t *Timer) loop() {
 			}
 
 			event = t.events[0]
-			if d = event.Delay(); d > 0 {
+			if d = event.Delay(); d >= 0 {
 				t.mu.RUnlock()
 				break
 			}
@@ -346,5 +344,6 @@ func (t *Timer) Set(event *Event, ttl time.Duration) bool {
 	return true
 }
 
-func debug() {
+func stdlog(v ...interface{}) {
+	fmt.Println(v...)
 }
