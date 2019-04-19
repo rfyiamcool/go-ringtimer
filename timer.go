@@ -101,15 +101,17 @@ func (t *Timer) AddCron(ttl time.Duration, fn ExpireFunc) *Event {
 }
 
 func (t *Timer) addAny(ttl time.Duration, fn ExpireFunc, cron bool) *Event {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	event := t.get()
+
 	event.ttl = ttl
 	event.expire = time.Now().Add(ttl)
 	event.fn = fn
 	event.cron = cron
+
+	t.mu.Lock()
 	t.add(event)
+	t.mu.Unlock()
+
 	return event
 }
 
@@ -140,13 +142,16 @@ func (t *Timer) Sleep(ttl time.Duration) {
 }
 
 func (t *Timer) get() *Event {
-	event := t.free
-	if event == nil {
-		t.allocate()
-		event = t.free
-	}
-	t.free = event.next
-	event.alone = true
+	// event := t.free
+	// if event == nil {
+	// 	t.allocate()
+	// 	event = t.free
+	// }
+	// t.free = event.next
+	// event.alone = true
+
+	// sync.pool
+	event := new(Event)
 	return event
 }
 
@@ -190,9 +195,9 @@ func (t *Timer) Del(event *Event) {
 
 func (t *Timer) put(event *Event) {
 	event.fn = nil
-	event.next = t.free
+	// event.next = t.free
 	event.alone = false
-	t.free = event
+	// t.free = event
 }
 
 func (t *Timer) del(event *Event) bool {
@@ -331,4 +336,7 @@ func (t *Timer) Set(event *Event, ttl time.Duration) bool {
 	event.expire = time.Now().Add(ttl)
 	t.add(event)
 	return true
+}
+
+func debug() {
 }

@@ -24,6 +24,7 @@ type TimeWheel struct {
 	timer      map[interface{}]int
 	currentPos int
 	slotNum    int
+	started    bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -58,8 +59,13 @@ func (tw *TimeWheel) initSlots() {
 }
 
 func (tw *TimeWheel) Start() {
+	if tw.started {
+		return
+	}
+
 	tw.currentPos = tw.getInitPosition()
 	tw.ticker = time.NewTicker(tw.interval)
+	tw.started = true
 	go tw.start()
 }
 
@@ -91,7 +97,6 @@ func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*Event, error
 
 	ev := timer.addAny(delay, fn, false)
 	ev.slotPos = pos
-
 	return ev, nil
 }
 
@@ -123,7 +128,6 @@ func (tw *TimeWheel) GetTimerCount() int64 {
 }
 
 func (tw *TimeWheel) start() {
-	tw.tickHandler()
 	for {
 		select {
 		case <-tw.ticker.C:
@@ -140,6 +144,7 @@ func (tw *TimeWheel) start() {
 func (tw *TimeWheel) tickHandler() {
 	timer := tw.slots[tw.currentPos]
 	timer.LoopOnce()
+	// wheel full, reset init 0
 	if tw.currentPos == tw.slotNum-1 {
 		tw.currentPos = 0
 	} else {
@@ -161,15 +166,25 @@ func (tw *TimeWheel) getWritePosition(d time.Duration) (pos int) {
 
 func (tw *TimeWheel) callGetPosition(delay time.Duration, mode int) int {
 	var (
-		pos          int
-		delaySeconds = int(delay.Seconds())
-		plus         = int(time.Now().Unix()) + delaySeconds
+		pos       int
+		plus      int
+		delayUnit int
 	)
+
+	if tw.interval >= time.Millisecond && tw.interval < time.Second {
+		delayUnit = int(delay.Nanoseconds() / 1000 / 1000)
+		plus = int(time.Now().Unix()) + delayUnit
+	} else {
+		// defualt second unit
+		delayUnit = int(delay.Seconds())
+		plus = int(time.Now().Unix()) + delayUnit
+	}
 
 	pos = plus % tw.slotNum
 	if mode == posWriteMode && pos == tw.currentPos {
 		pos++
 	}
+
 	return pos
 }
 
