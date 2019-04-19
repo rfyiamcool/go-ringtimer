@@ -16,6 +16,11 @@ var (
 	ErrStopped    = errors.New("timer has stopped")
 )
 
+const (
+	// optimize GC when timer is very many
+	onSyncPool = false
+)
+
 type Timer struct {
 	mu         sync.RWMutex
 	ctx        context.Context
@@ -142,16 +147,15 @@ func (t *Timer) Sleep(ttl time.Duration) {
 }
 
 func (t *Timer) get() *Event {
-	// event := t.free
-	// if event == nil {
-	// 	t.allocate()
-	// 	event = t.free
-	// }
-	// t.free = event.next
-	// event.alone = true
+	var event *Event
+	if onSyncPool {
+		// sync.pool
+		event = globalEventPool.get()
+		event.alone = true
+	} else {
+		event = new(Event)
+	}
 
-	// sync.pool
-	event := new(Event)
 	return event
 }
 
@@ -195,9 +199,10 @@ func (t *Timer) Del(event *Event) {
 
 func (t *Timer) put(event *Event) {
 	event.fn = nil
-	// event.next = t.free
 	event.alone = false
-	// t.free = event
+	if onSyncPool {
+		globalEventPool.put(event)
+	}
 }
 
 func (t *Timer) del(event *Event) bool {
@@ -266,12 +271,14 @@ func (t *Timer) Stop() error {
 	return ErrStopped
 }
 
+// cancelCtx
 func (t *Timer) cancelCtx() {
 	if t.cancelFunc != nil {
 		t.cancelFunc()
 	}
 }
 
+// LoopOnce run cone
 func (t *Timer) LoopOnce() {
 	t.loop()
 }
@@ -322,6 +329,7 @@ func (t *Timer) IsStopped() bool {
 	return atomic.CompareAndSwapInt32(&t.stopped, 1, 1)
 }
 
+// Set
 func (t *Timer) Set(event *Event, ttl time.Duration) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
