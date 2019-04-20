@@ -10,7 +10,8 @@ import (
 )
 
 var (
-	DefaultAllocCap = 1024
+	defaultAllocCap     = 1024
+	defaultLoopInterval = 500 * time.Millisecond
 
 	ErrStarted    = errors.New("timer has started")
 	ErrNotStarted = errors.New("timer has not started")
@@ -27,6 +28,8 @@ type Timer struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
+	loopInterval time.Duration
+
 	// avoid multi call
 	inited  bool
 	started int32
@@ -40,7 +43,7 @@ type Timer struct {
 // New returns an timer instance with the default allocate capicity
 func NewTimer() *Timer {
 	t := &Timer{}
-	t.init(DefaultAllocCap)
+	t.init(defaultAllocCap)
 	return t
 }
 
@@ -249,7 +252,12 @@ func (t *Timer) Start() error {
 		go func() {
 			for {
 				t.loop()
-				time.Sleep(5 * time.Millisecond)
+				if t.loopInterval == 0 {
+					time.Sleep(defaultLoopInterval)
+					continue
+				}
+
+				time.Sleep(t.loopInterval)
 			}
 		}()
 		return nil
