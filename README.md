@@ -11,8 +11,12 @@ if err != nil {
 }
 tw.Start()
 
-tw.AfterFunc(1 * time.Second, func() {
+entry, _ := tw.AfterFunc(1 * time.Second, func() {
 })
+
+<- entry.C
+entry.Reset(2 * time.Second)
+entr.Stop()
 
 tw.Sleep(1 * time.Second)
 <- tw.After(1 * time.Second)
@@ -20,8 +24,7 @@ tw.Sleep(1 * time.Second)
 
 ## TO DO List:
 
-* like go' newTimer
-* like go' newTick
+* like go' newTicker on conCurrentTimer
 
 ## Performance:
 

@@ -35,7 +35,7 @@ func TestTimeWheelRemove(t *testing.T) {
 		b = true
 	})
 
-	tw.RemoveTimer(entry.event)
+	tw.RemoveTimer(entry)
 	time.Sleep(2 * time.Second)
 	assert.False(t, b)
 }

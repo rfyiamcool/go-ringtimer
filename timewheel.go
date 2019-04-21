@@ -29,6 +29,9 @@ type TimeWheel struct {
 	slotNum    int
 	started    bool
 
+	concurrentTimerStarted int32
+	concurrentTimer        *ConcurrentTimer
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -43,6 +46,11 @@ func NewTimeWheel(interval time.Duration, slotNum int) (*TimeWheel, error) {
 		return nil, ErrInvalidSlot
 	}
 
+	ccTimer, err := NewConcurrentTimer(5, interval)
+	if err != nil {
+		return nil, err
+	}
+
 	var ctx, cancel = context.WithCancel(context.Background())
 	tw := &TimeWheel{
 		interval: interval,
@@ -52,6 +60,8 @@ func NewTimeWheel(interval time.Duration, slotNum int) (*TimeWheel, error) {
 
 		ctx:    ctx,
 		cancel: cancel,
+
+		concurrentTimer: ccTimer,
 	}
 
 	tw.initSlots()
@@ -79,16 +89,35 @@ func (tw *TimeWheel) Stop() {
 	tw.cancel()
 }
 
-func (tw *TimeWheel) ResetTimer(ev *Event, delay time.Duration) (*Event, bool) {
-	if ev == nil {
-		return nil, false
+func (tw *TimeWheel) ResetTimer(entry *TimerEntry, delay time.Duration) bool {
+	if entry.event == nil {
+		return false
 	}
 
-	timer := tw.slots[ev.slotPos]
-	timer.Del(ev)
-	newEvent := timer.Add(delay, ev.fn)
-	ev = nil
-	return newEvent, true
+	entry.Reset(delay)
+	return true
+}
+
+func (tw *TimeWheel) AddCronTimer(delay time.Duration, fn ExpireFunc) (*TimerEntry, error) {
+	if atomic.CompareAndSwapInt32(&tw.concurrentTimerStarted, 0, 1) {
+		tw.concurrentTimer.Start()
+	}
+
+	timer := tw.concurrentTimer.GetOneTimer()
+
+	// new TimerEntry
+	entry := new(TimerEntry)
+	entry.init()
+
+	// new event
+	ev := timer.addAny(delay, fn, false, entry.C)
+
+	// link
+	entry.event = ev
+	entry.timer = timer
+	entry.tw = tw
+
+	return entry, nil
 }
 
 func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*TimerEntry, error) {
@@ -117,13 +146,12 @@ func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*TimerEntry, 
 	return entry, nil
 }
 
-func (tw *TimeWheel) RemoveTimer(ev *Event) {
-	if ev == nil {
+func (tw *TimeWheel) RemoveTimer(entry *TimerEntry) {
+	if entry.event == nil {
 		return
 	}
 
-	timer := tw.slots[ev.slotPos]
-	timer.Del(ev)
+	entry.Stop()
 }
 
 func (tw *TimeWheel) Sleep(delay time.Duration) {
@@ -309,7 +337,7 @@ func (te *TimerEntry) Reset(delay time.Duration) bool {
 		timer = te.tw.slots[pos]
 	)
 
-	ev := timer.addAny(delay, te.event.fn, false, te.C)
+	ev := timer.addAny(delay, te.event.fn, te.event.cron, te.C)
 	ev.slotPos = pos
 	ev.c = te.C
 
