@@ -200,7 +200,6 @@ func (t *Timer) Del(event *Event) {
 }
 
 func (t *Timer) put(event *Event) {
-	event.clear()
 	if onSyncPool {
 		globalEventPool.put(event)
 	}

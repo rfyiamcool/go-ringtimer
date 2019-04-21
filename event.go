@@ -15,6 +15,8 @@ type ExpireFunc func()
 type Event struct {
 	slotPos int // mark timeWheel slot index
 	index   int // index in the min heap structure
+	c       chan time.Time
+	closed  bool
 
 	ttl    time.Duration // wait delay time
 	expire time.Time     // due timestamp
@@ -26,6 +28,18 @@ type Event struct {
 	alone   bool // indicates event is alone or in the free linked-list of timer
 }
 
+func (e *Event) init() {
+	e.c = make(chan time.Time)
+}
+
+func (e *Event) sendNotify() {
+	select {
+	case e.c <- time.Now():
+	default:
+		return
+	}
+}
+
 // clear field
 func (e *Event) clear() {
 	e.index = 0
@@ -33,6 +47,7 @@ func (e *Event) clear() {
 	e.cron = false
 	e.fn = nil
 	e.alone = false
+	e.c = nil
 }
 
 // Less is used to compare expiration with other events.
@@ -59,6 +74,7 @@ type eventPool struct {
 
 func (ep *eventPool) get() *Event {
 	if t, _ := ep.p.Get().(*Event); t != nil {
+		t.clear()
 		return t
 	}
 

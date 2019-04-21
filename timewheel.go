@@ -15,7 +15,8 @@ const (
 )
 
 var (
-	ErrLtMinDelay = errors.New("lt delay min")
+	ErrLtMinDelay  = errors.New("lt delay min")
+	ErrInvalidSlot = errors.New("invalid slot num")
 )
 
 type TimeWheel struct {
@@ -35,8 +36,11 @@ type TimeWheel struct {
 }
 
 func NewTimeWheel(interval time.Duration, slotNum int) (*TimeWheel, error) {
-	if interval < SecondInterval || slotNum <= 0 {
+	if interval < SecondInterval {
 		return nil, ErrLtMinDelay
+	}
+	if slotNum <= 0 {
+		return nil, ErrInvalidSlot
 	}
 
 	var ctx, cancel = context.WithCancel(context.Background())
@@ -175,7 +179,7 @@ type TimerStatsRes struct {
 	Len    int
 }
 
-func (tw *TimeWheel) GetTimersLength() []TimerStatsRes {
+func (tw *TimeWheel) GetEachTimerLength() []TimerStatsRes {
 	var res = make([]TimerStatsRes, tw.slotNum)
 	for idx, tm := range tw.slots {
 		res[idx] = TimerStatsRes{
@@ -185,6 +189,15 @@ func (tw *TimeWheel) GetTimersLength() []TimerStatsRes {
 	}
 
 	return res
+}
+
+func (tw *TimeWheel) GetTimersLength() int {
+	var counter int
+	for _, tm := range tw.slots {
+		counter += tm.Len()
+	}
+
+	return counter
 }
 
 func (tw *TimeWheel) getPosition(d time.Duration) (pos int) {
@@ -246,4 +259,45 @@ func (tw *TimeWheel) deincr() {
 
 func (tw *TimeWheel) loadIncr() int64 {
 	return atomic.LoadInt64(&tw.counter)
+}
+
+type TimerEntry struct {
+	timer *Timer
+	tw    *TimeWheel
+	event *Event
+
+	C chan time.Time
+}
+
+func (te *TimerEntry) init() {
+	te.C = make(chan time.Time)
+}
+
+func (te *TimerEntry) Stop() {
+	// remove event
+	te.timer.Del(te.event)
+}
+
+func (te *TimerEntry) Reset(delay time.Duration) bool {
+	// stop
+	te.timer.Del(te.event)
+
+	// add
+	if delay < time.Millisecond {
+		return false
+	}
+
+	var (
+		pos   = te.tw.getWritePosition(delay)
+		timer = te.tw.slots[pos]
+	)
+
+	ev := timer.addAny(delay, te.event.fn, false)
+	ev.slotPos = pos
+	ev.c = te.C
+
+	te.timer = timer
+	te.event = ev
+
+	return true
 }
