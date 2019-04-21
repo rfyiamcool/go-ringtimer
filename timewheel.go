@@ -91,7 +91,7 @@ func (tw *TimeWheel) ResetTimer(ev *Event, delay time.Duration) (*Event, bool) {
 	return newEvent, true
 }
 
-func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*Event, error) {
+func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*TimerEntry, error) {
 	if delay < time.Millisecond {
 		return nil, ErrLtMinDelay
 	}
@@ -101,9 +101,20 @@ func (tw *TimeWheel) AddTimer(delay time.Duration, fn ExpireFunc) (*Event, error
 		timer = tw.slots[pos]
 	)
 
-	ev := timer.addAny(delay, fn, false)
+	// new TimerEntry
+	entry := new(TimerEntry)
+	entry.init()
+
+	// new event
+	ev := timer.addAny(delay, fn, false, entry.C)
 	ev.slotPos = pos
-	return ev, nil
+
+	// link
+	entry.event = ev
+	entry.timer = timer
+	entry.tw = tw
+
+	return entry, nil
 }
 
 func (tw *TimeWheel) RemoveTimer(ev *Event) {
@@ -133,7 +144,7 @@ func (tw *TimeWheel) After(delay time.Duration) <-chan time.Time {
 	return timer.After(delay)
 }
 
-func (tw *TimeWheel) AfterFunc(delay time.Duration, fn ExpireFunc) (*Event, error) {
+func (tw *TimeWheel) AfterFunc(delay time.Duration, fn ExpireFunc) (*TimerEntry, error) {
 	return tw.AddTimer(delay, fn)
 }
 
@@ -262,9 +273,10 @@ func (tw *TimeWheel) loadIncr() int64 {
 }
 
 type TimerEntry struct {
-	timer *Timer
-	tw    *TimeWheel
-	event *Event
+	timer  *Timer
+	tw     *TimeWheel
+	event  *Event
+	stoped bool
 
 	C chan time.Time
 }
@@ -276,10 +288,15 @@ func (te *TimerEntry) init() {
 func (te *TimerEntry) Stop() {
 	// remove event
 	te.timer.Del(te.event)
+	te.stoped = true
 }
 
 func (te *TimerEntry) Reset(delay time.Duration) bool {
-	// stop
+	if te.stoped {
+		return false
+	}
+
+	// del
 	te.timer.Del(te.event)
 
 	// add
@@ -292,7 +309,7 @@ func (te *TimerEntry) Reset(delay time.Duration) bool {
 		timer = te.tw.slots[pos]
 	)
 
-	ev := timer.addAny(delay, te.event.fn, false)
+	ev := timer.addAny(delay, te.event.fn, false, te.C)
 	ev.slotPos = pos
 	ev.c = te.C
 

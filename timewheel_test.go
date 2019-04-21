@@ -31,11 +31,11 @@ func TestTimeWheelRemove(t *testing.T) {
 	tw.Start()
 
 	var b = false
-	ev, _ := tw.AfterFunc(1*time.Second, func() {
+	entry, _ := tw.AfterFunc(1*time.Second, func() {
 		b = true
 	})
 
-	tw.RemoveTimer(ev)
+	tw.RemoveTimer(entry.event)
 	time.Sleep(2 * time.Second)
 	assert.False(t, b)
 }

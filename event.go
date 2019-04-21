@@ -3,6 +3,7 @@ package timewheel
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -13,10 +14,10 @@ type ExpireFunc func()
 
 // An Event represents an elemenet of the events in the timer.
 type Event struct {
-	slotPos int // mark timeWheel slot index
-	index   int // index in the min heap structure
-	c       chan time.Time
-	closed  bool
+	slotPos int            // mark timeWheel slot index
+	index   int            // index in the min heap structure
+	c       chan time.Time // like go time.NewTimer().C
+	closed  int32
 
 	ttl    time.Duration // wait delay time
 	expire time.Time     // due timestamp
@@ -32,7 +33,21 @@ func (e *Event) init() {
 	e.c = make(chan time.Time)
 }
 
+func (e *Event) close() {
+	var ok = atomic.CompareAndSwapInt32(&e.closed, 0, 1)
+	if ok {
+		return
+	}
+
+	close(e.c)
+}
+
 func (e *Event) sendNotify() {
+	if atomic.CompareAndSwapInt32(&e.closed, 1, 1) {
+		// already closed
+		return
+	}
+
 	select {
 	case e.c <- time.Now():
 	default:

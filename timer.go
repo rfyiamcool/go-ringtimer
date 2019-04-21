@@ -99,22 +99,34 @@ func (t *Timer) allocate() {
 
 // Add is used to add new event
 func (t *Timer) Add(ttl time.Duration, fn ExpireFunc) *Event {
-	return t.addAny(ttl, fn, false)
+	return t.addAny(ttl, fn, false, nil)
+}
+
+func (t *Timer) AddWithChan(ttl time.Duration, fn ExpireFunc, notifyQueue chan time.Time) *Event {
+	return t.addAny(ttl, fn, false, notifyQueue)
 }
 
 // AddCron is used to add new crontab event
 func (t *Timer) AddCron(ttl time.Duration, fn ExpireFunc) *Event {
-	return t.addAny(ttl, fn, true)
+	return t.addAny(ttl, fn, true, nil)
 }
 
-func (t *Timer) addAny(ttl time.Duration, fn ExpireFunc, cron bool) *Event {
-	event := t.get()
+func (t *Timer) addAny(ttl time.Duration, fn ExpireFunc, cron bool, notifyQueue chan time.Time) *Event {
+	// get from sync.Pool cache
+	var (
+		event = t.get()
+	)
 
+	// init event field value
 	event.ttl = ttl
 	event.expire = time.Now().Add(ttl)
 	event.fn = fn
 	event.cron = cron
+	if notifyQueue != nil {
+		event.c = notifyQueue
+	}
 
+	// add event
 	t.mu.Lock()
 	t.add(event)
 	t.mu.Unlock()
@@ -325,6 +337,10 @@ func (t *Timer) loop() {
 			if fn != nil {
 				go fn()
 			}
+
+			if event.c != nil {
+				event.sendNotify()
+			}
 		}
 	}
 }
@@ -332,6 +348,11 @@ func (t *Timer) loop() {
 // IsStopped is used to show the timer is whether stopped.
 func (t *Timer) IsStopped() bool {
 	return atomic.CompareAndSwapInt32(&t.stopped, 1, 1)
+}
+
+// Reset alias Set func
+func (t *Timer) Reset(event *Event, ttl time.Duration) bool {
+	return t.Set(event, ttl)
 }
 
 // Set
