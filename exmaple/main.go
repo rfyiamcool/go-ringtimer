@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rfyiamcool/go-timewheel"
+	"github.com/rfyiamcool/go-ringtimer"
 )
 
 func multi() {

@@ -1,4 +1,4 @@
-# go-timewheel
+# go-ringtimer
 
 ![](timewheel.png)
 
@@ -21,10 +21,6 @@ entr.Stop()
 tw.Sleep(1 * time.Second)
 <- tw.After(1 * time.Second)
 ```
-
-## TO DO List:
-
-* like go' newTicker on conCurrentTimer
 
 ## Performance:
 
